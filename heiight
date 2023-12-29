@@ -1,0 +1,135 @@
+Create a new SwiftUI project:
+
+Open Xcode and create a new SwiftUI project.
+
+Request LiDAR capability:
+
+In your Xcode project, go to the "Signing & Capabilities" tab. Add the "LiDAR" capability.
+
+Update Info.plist:
+
+Open your Info.plist file and add the NSCameraUsageDescription key with a message explaining why you need access to the camera.
+
+
+
+
+
+
+
+
+ContentView.swift
+
+import SwiftUI
+import AVFoundation
+
+struct ContentView: View {
+    @State private var height: Double = 0.0
+
+    var body: some View {
+        VStack {
+            Text("Object Height: \(String(format: "%.2f", height)) meters")
+                .padding()
+            CameraView(height: $height)
+                .edgesIgnoringSafeArea(.all)
+        }
+    }
+}
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
+}
+
+
+
+
+
+
+
+CameraView.swift
+
+import SwiftUI
+import AVFoundation
+
+struct CameraView: UIViewControllerRepresentable {
+    @Binding var height: Double
+
+    class Coordinator: NSObject, AVCaptureDepthDataOutputDelegate {
+        var parent: CameraView
+
+        init(parent: CameraView) {
+            self.parent = parent
+        }
+
+        func captureOutput(_ output: AVCaptureOutput, didOutput depthData: AVDepthData, timestamp: CMTime, connection: AVCaptureConnection) {
+            // Access LiDAR depth data here
+            if let depthDataMap = depthData.depthDataMap {
+                let height = depthDataMap.convertToMeters(at: CGPoint(x: 0.5, y: 0.5))
+                DispatchQueue.main.async {
+                    self.parent.height = height
+                }
+            }
+        }
+    }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        let viewController = UIViewController()
+        let captureSession = AVCaptureSession()
+
+        guard let device = AVCaptureDevice.default(.builtInLiDARScanner, for: .depthData, position: .back) else {
+            print("LiDAR sensor not available.")
+            return viewController
+        }
+
+        do {
+            let input = try AVCaptureDeviceInput(device: device)
+            captureSession.addInput(input)
+
+            let depthOutput = AVCaptureDepthDataOutput()
+            if captureSession.canAddOutput(depthOutput) {
+                captureSession.addOutput(depthOutput)
+                depthOutput.setDelegate(context.coordinator, callbackQueue: DispatchQueue.global(qos: .userInteractive))
+            }
+
+            let previewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
+            previewLayer.videoGravity = .resizeAspectFill
+
+            viewController.view.layer.addSublayer(previewLayer)
+            captureSession.startRunning()
+        } catch {
+            print(error.localizedDescription)
+        }
+
+        return viewController
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        return Coordinator(parent: self)
+    }
+}
+
+extension CGPoint {
+    func convertToMeters(at point: CGPoint) -> Double {
+        let x = Int(self.x * CGFloat(AVPixelFormatType.depthFloat32.rawValue))
+        let y = Int(self.y * CGFloat(AVPixelFormatType.depthFloat32.rawValue))
+
+        let buffer = UnsafeMutableBufferPointer<Float32>.allocate(capacity: 1)
+        buffer.initialize(repeating: 0)
+
+        let byteCount = MemoryLayout<Float32>.stride
+        let offset = y * x * byteCount
+
+        _ = withUnsafeMutableBytes(of: &buffer) { (rawPtr) in
+            let destPtr = rawPtr.baseAddress!.advanced(by: offset)
+            memcpy(destPtr, point.data, byteCount)
+        }
+
+        let result = buffer[0]
+        buffer.deallocate()
+
+        return Double(result)
+    }
+}
