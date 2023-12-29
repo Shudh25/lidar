@@ -1,0 +1,47 @@
+import UIKit
+import AVFoundation
+
+class ViewController: UIViewController {
+
+    private var captureSession: AVCaptureSession?
+    private var depthDataOutput: AVCaptureDepthDataOutput?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        setupCamera()
+    }
+
+    private func setupCamera() {
+        guard let device = AVCaptureDevice.default(.builtInLiDARScanner, for: .depthData, position: .back) else {
+            print("LiDAR sensor not available.")
+            return
+        }
+
+        do {
+            let input = try AVCaptureDeviceInput(device: device)
+
+            captureSession = AVCaptureSession()
+            captureSession?.addInput(input)
+
+            depthDataOutput = AVCaptureDepthDataOutput()
+            if captureSession!.canAddOutput(depthDataOutput!) {
+                captureSession?.addOutput(depthDataOutput!)
+                depthDataOutput?.setDelegate(self, callbackQueue: DispatchQueue.global(qos: .userInteractive))
+            }
+
+            captureSession?.startRunning()
+        } catch {
+            print(error.localizedDescription)
+        }
+    }
+}
+
+extension ViewController: AVCaptureDepthDataOutputDelegate {
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput depthData: AVDepthData, timestamp: CMTime, connection: AVCaptureConnection) {
+        // Access LiDAR depth data here
+        // You can process the depth data as needed
+        // For example, you can use depthData.depthDataMap to get a depth map
+    }
+}
